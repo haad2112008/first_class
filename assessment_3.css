@@ -1,0 +1,56 @@
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #f4f7f6;
+    display: flex;
+    justify-content: center;
+    padding: 40px;
+}
+
+.container {
+    width: 100%;
+    max-width: 800px;
+}
+
+h1 {
+    color: #333;
+    text-align: center;
+}
+
+#searchBar {
+    width: 100%;
+    padding: 12px;
+    margin-bottom: 20px;
+    border: 2px solid #ddd;
+    border-radius: 8px;
+    font-size: 16px;
+    outline: none;
+    transition: border-color 0.3s;
+}
+
+#searchBar:focus {
+    border-color: #007bff;
+}
+
+.post-card {
+    background: white;
+    padding: 20px;
+    margin-bottom: 15px;
+    border-radius: 8px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+
+.post-card h3 {
+    margin-top: 0;
+    color: #007bff;
+    text-transform: capitalize;
+}
+
+.post-card p {
+    color: #666;
+    line-height: 1.5;
+}
+
+.loading {
+    text-align: center;
+    color: #888;
+}

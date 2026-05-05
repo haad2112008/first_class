@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Geeta University | Interactive 3D Digital Twin</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- OrbitControls is essential for the requested Zoom/Pan/Rotate functionality -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body { margin: 0; overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #020617; }
+        canvas { display: block; width: 100vw; height: 100vh; }
+        .overlay { position: absolute; pointer-events: none; width: 100%; height: 100%; top: 0; left: 0; z-index: 10; }
+        .ui-element { pointer-events: auto; }
+        #info-panel {
+            transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            transform: translateX(120%);
+        }
+        #info-panel.active { transform: translateX(0); }
+        .search-results { max-height: 250px; overflow-y: auto; scrollbar-width: thin; }
+        .search-item:hover { background: #1e293b; }
+        #loading-screen {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: #020617; display: flex; flex-direction: column;
+            align-items: center; justify-content: center; z-index: 1000;
+            transition: opacity 0.5s ease;
+        }
+        .pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
+        
+        /* Glassmorphism utility */
+        .glass {
+            background: rgba(15, 23, 42, 0.8);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+    </style>
+</head>
+<body>
+
+    <div id="loading-screen">
+        <div class="text-white text-4xl font-black mb-6 tracking-widest italic">GEETA UNIVERSITY</div>
+        <div class="w-64 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+            <div id="loader-bar" class="h-full bg-blue-500 w-0 transition-all duration-500 ease-out"></div>
+        </div>
+        <p class="text-blue-400 mt-6 text-sm font-medium tracking-wide pulse">MAPPING DIGITAL TWIN...</p>
+    </div>
+
+    <div class="overlay p-6 flex flex-col justify-between">
+        <!-- Top Interface -->
+        <div class="flex flex-col md:flex-row justify-between items-start gap-4">
+            <div class="ui-element glass p-4 rounded-2xl shadow-2xl">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center shadow-lg shadow-blue-900/20">
+                        <i class="fas fa-university text-white"></i>
+                    </div>
+                    <div>
+                        <h1 class="text-white text-lg font-bold leading-none">GEETA UNIVERSITY</h1>
+                        <p class="text-blue-400 text-[10px] tracking-[0.2em] uppercase font-semibold mt-1">Smart Campus 3D</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="ui-element relative w-full md:w-96">
+                <div class="flex items-center glass p-3.5 rounded-2xl shadow-xl">
+                    <i class="fas fa-search text-slate-400 mr-3"></i>
+                    <input type="text" id="campus-search" autocomplete="off" placeholder="Find classrooms, labs, or blocks..." class="bg-transparent border-none text-white focus:outline-none w-full text-sm placeholder:text-slate-500">
+                </div>
+                <div id="search-results" class="search-results absolute mt-2 w-full glass rounded-2xl hidden shadow-2xl overflow-hidden"></div>
+            </div>
+        </div>
+
+        <!-- Building Info Card -->
+        <div id="info-panel" class="ui-element fixed right-6 top-24 w-80 glass rounded-3xl p-6 text-white shadow-2xl z-20">
+            <button id="close-panel" class="absolute top-5 right-5 text-slate-400 hover:text-white transition-colors">
+                <i class="fas fa-times"></i>
+            </button>
+            <div id="building-content">
+                <div class="h-44 bg-slate-800/50 rounded-2xl mb-5 overflow-hidden relative border border-white/5">
+                    <div id="building-img" class="w-full h-full bg-slate-700 flex items-center justify-center">
+                        <i class="fas fa-building text-4xl text-slate-600"></i>
+                    </div>
+                    <div class="absolute top-3 left-3">
+                        <span id="building-status" class="bg-green-500/20 text-green-400 text-[10px] px-2.5 py-1 rounded-full border border-green-500/30 uppercase font-bold">Active</span>
+                    </div>
+                </div>
+                <h2 id="building-name" class="text-2xl font-bold mb-1 tracking-tight">Academic Block</h2>
+                <p id="building-subtitle" class="text-blue-400 text-xs font-semibold uppercase tracking-wider mb-4">Core Facility</p>
+                
+                <div class="space-y-4 mb-6">
+                    <div class="flex items-start gap-3">
+                        <div class="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center shrink-0">
+                            <i class="fas fa-info-circle text-blue-400 text-xs"></i>
+                        </div>
+                        <p id="building-desc" class="text-sm text-slate-300 leading-relaxed">Detailed information about the selected campus infrastructure will appear here.</p>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <button onclick="showRouteToTarget()" class="bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-xl font-bold text-xs transition-all shadow-lg shadow-blue-900/40">
+                        <i class="fas fa-directions mr-2"></i> GET ROUTE
+                    </button>
+                    <button class="bg-slate-800 hover:bg-slate-700 text-white py-3 rounded-xl font-bold text-xs transition-all">
+                        <i class="fas fa-layer-group mr-2"></i> FLOORS
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer Stats -->
+        <div class="flex justify-between items-end">
+            <div class="ui-element glass px-5 py-4 rounded-2xl shadow-lg flex gap-6 items-center">
+                <div class="flex items-center gap-3">
+                    <div class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                    <div>
+                        <p class="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">Live Traffic</p>
+                        <p class="text-white text-sm font-black">LOW</p>
+                    </div>
+                </div>
+                <div class="w-px bg-slate-700 h-8"></div>
+                <div>
+                    <p class="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">Campus Events</p>
+                    <p class="text-blue-400 text-sm font-black">2 LIVE</p>
+                </div>
+            </div>
+
+            <div class="ui-element flex flex-col gap-3">
+                <button id="view-reset" title="Initial View" class="w-12 h-12 glass rounded-full text-white hover:bg-blue-600 hover:border-blue-500 transition-all shadow-xl flex items-center justify-center">
+                    <i class="fas fa-home"></i>
+                </button>
+                <button id="view-top" title="Top View" class="w-12 h-12 glass rounded-full text-white hover:bg-blue-600 hover:border-blue-500 transition-all shadow-xl flex items-center justify-center">
+                    <i class="fas fa-compress"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let scene, camera, renderer, controls, raycaster, mouse;
+        let buildings = [];
+        let isNavigating = false;
+        let activeTarget = null;
+        let pathLine = null;
+
+        const CAMPUS_DATA = [
+            { id: 1, name: "Pharmacy Block (D-Block)", subtitle: "School of Pharmaceutical Sciences", pos: { x: -45, z: -30 }, scale: { x: 12, y: 15, z: 12 }, color: 0xeab308, desc: "Primary center for Pharmacy students. Includes advanced chemistry labs, research wings, and faculty offices." },
+            { id: 2, name: "Engineering Block (E-Block)", subtitle: "Main Academic Complex", pos: { x: 40, z: 20 }, scale: { x: 18, y: 18, z: 15 }, color: 0x3b82f6, desc: "The central engineering hub. Houses mechanical workshops, electronics labs, and the administrative Dean's office." },
+            { id: 3, name: "CSE Department", subtitle: "School of Computing", pos: { x: 15, z: -25 }, scale: { x: 14, y: 20, z: 12 }, color: 0x8b5cf6, desc: "Home to Computer Science & Engineering. High-performance computing labs, AI research center, and coding blocks." },
+            { id: 4, name: "Central Library", subtitle: "Knowledge Resource Centre", pos: { x: -15, z: 10 }, scale: { x: 20, y: 10, z: 18 }, color: 0x10b981, desc: "A three-story digital library with thousands of journals, quiet study zones, and a digital archive room." },
+            { id: 5, name: "Hostel Block", subtitle: "Residency Wing", pos: { x: 65, z: -50 }, scale: { x: 12, y: 25, z: 20 }, color: 0xf43f5e, desc: "On-campus student accommodation. Features common rooms, mess hall, and recreational areas." },
+            { id: 6, name: "Football Ground", subtitle: "Sports Arena", pos: { x: 0, z: 60 }, scale: { x: 60, y: 1, z: 40 }, color: 0x15803d, desc: "Standard turf for football and athletics. Equipped with floodlights for evening matches." },
+            { id: 7, name: "Parking Area", subtitle: "Staff & Student Parking", pos: { x: -60, z: 25 }, scale: { x: 30, y: 0.5, z: 35 }, color: 0x475569, desc: "Designated zone for two-wheelers and staff cars. Under 24/7 surveillance." },
+            { id: 8, name: "Cafeteria", subtitle: "Dining Area", pos: { x: 25, z: 45 }, scale: { x: 12, y: 6, z: 12 }, color: 0xf97316, desc: "Multi-cuisine food court serving students and faculty throughout the day." }
+        ];
+
+        function init() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x020617);
+            scene.fog = new THREE.FogExp2(0x020617, 0.003);
+
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
+            camera.position.set(120, 100, 150);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            document.body.appendChild(renderer.domElement);
+
+            // Controls
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.maxPolarAngle = Math.PI / 2.1;
+            controls.minDistance = 30;
+            controls.maxDistance = 400;
+
+            raycaster = new THREE.Raycaster();
+            mouse = new THREE.Vector2();
+
+            // Lighting
+            const ambLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambLight);
+
+            const sun = new THREE.DirectionalLight(0xffffff, 0.8);
+            sun.position.set(100, 200, 100);
+            sun.castShadow = true;
+            scene.add(sun);
+
+            const skyColor = 0x3b82f6;
+            const blueLight = new THREE.PointLight(skyColor, 2, 300);
+            blueLight.position.set(0, 50, 0);
+            scene.add(blueLight);
+
+            createCampusLayout();
+            setupEvents();
+            animate();
+
+            // Smooth Loading Progress
+            let progress = 0;
+            const interval = setInterval(() => {
+                progress += Math.random() * 30;
+                document.getElementById('loader-bar').style.width = Math.min(progress, 100) + '%';
+                if (progress >= 100) {
+                    clearInterval(interval);
+                    setTimeout(() => {
+                        const screen = document.getElementById('loading-screen');
+                        screen.style.opacity = '0';
+                        setTimeout(() => screen.style.display = 'none', 500);
+                    }, 400);
+                }
+            }, 200);
+        }
+
+        function createCampusLayout() {
+            // Ground
+            const groundGeo = new THREE.PlaneGeometry(500, 500);
+            const groundMat = new THREE.MeshStandardMaterial({ 
+                color: 0x0f172a,
+                roughness: 0.8,
+                metalness: 0.2
+            });
+            const ground = new THREE.Mesh(groundGeo, groundMat);
+            ground.rotation.x = -Math.PI / 2;
+            ground.receiveShadow = true;
+            scene.add(ground);
+
+            // Grid
+            const grid = new THREE.GridHelper(500, 40, 0x1e293b, 0x0f172a);
+            grid.position.y = 0.05;
+            scene.add(grid);
+
+            // Roads (Simple geometry)
+            const createRoad = (w, h, x, z, rotY = 0) => {
+                const road = new THREE.Mesh(
+                    new THREE.PlaneGeometry(w, h),
+                    new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 1 })
+                );
+                road.rotation.x = -Math.PI / 2;
+                road.rotation.z = rotY;
+                road.position.set(x, 0.1, z);
+                scene.add(road);
+            };
+
+            createRoad(500, 12, 0, 0); // Main West-East
+            createRoad(12, 500, 0, 0); // Main North-South
+            createRoad(12, 200, 40, 0, 0); // Side access
+
+            // Buildings
+            CAMPUS_DATA.forEach(data => {
+                const group = new THREE.Group();
+                group.position.set(data.pos.x, 0, data.pos.z);
+                
+                // Base structure
+                const bodyGeo = new THREE.BoxGeometry(data.scale.x, data.scale.y, data.scale.z);
+                const bodyMat = new THREE.MeshStandardMaterial({ 
+                    color: data.color, 
+                    roughness: 0.3, 
+                    metalness: 0.6,
+                    emissive: data.color,
+                    emissiveIntensity: 0.05
+                });
+                const body = new THREE.Mesh(bodyGeo, bodyMat);
+                body.position.y = data.scale.y / 2;
+                body.castShadow = true;
+                body.receiveShadow = true;
+                body.userData = data;
+                group.add(body);
+
+                // Windows (using wireframe or nested boxes for detail)
+                if (data.scale.y > 2) {
+                    const winRows = Math.floor(data.scale.y / 3);
+                    const winGeo = new THREE.BoxGeometry(data.scale.x + 0.2, 0.4, data.scale.z + 0.2);
+                    const winMat = new THREE.MeshStandardMaterial({ 
+                        color: 0xffffff, 
+                        emissive: 0xffffff, 
+                        emissiveIntensity: 0.4,
+                        transparent: true,
+                        opacity: 0.5
+                    });
+                    for (let i = 1; i < winRows; i++) {
+                        const win = new THREE.Mesh(winGeo, winMat);
+                        win.position.y = i * 3 + 1;
+                        group.add(win);
+                    }
+                }
+
+                scene.add(group);
+                buildings.push(body);
+            });
+        }
+
+        function setupEvents() {
+            window.addEventListener('mousemove', (e) => {
+                mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+                mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+            });
+
+            window.addEventListener('click', () => {
+                raycaster.setFromCamera(mouse, camera);
+                const intersects = raycaster.intersectObjects(buildings);
+                if (intersects.length > 0) {
+                    selectBuilding(intersects[0].object.userData);
+                }
+            });
+
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+
+            document.getElementById('close-panel').addEventListener('click', () => {
+                document.getElementById('info-panel').classList.remove('active');
+            });
+
+            document.getElementById('view-reset').addEventListener('click', () => {
+                isNavigating = true;
+                animateCamera(new THREE.Vector3(120, 100, 150), new THREE.Vector3(0,0,0));
+            });
+
+            document.getElementById('view-top').addEventListener('click', () => {
+                isNavigating = true;
+                animateCamera(new THREE.Vector3(0, 200, 1), new THREE.Vector3(0,0,0));
+            });
+
+            // Search Functionality
+            const search = document.getElementById('campus-search');
+            const results = document.getElementById('search-results');
+
+            search.addEventListener('input', (e) => {
+                const query = e.target.value.toLowerCase();
+                if (!query) { results.classList.add('hidden'); return; }
+
+                const filtered = CAMPUS_DATA.filter(b => b.name.toLowerCase().includes(query) || b.subtitle.toLowerCase().includes(query));
+                results.innerHTML = '';
+                
+                if (filtered.length > 0) {
+                    filtered.forEach(b => {
+                        const item = document.createElement('div');
+                        item.className = 'search-item p-4 text-white text-sm cursor-pointer transition-colors border-b border-white/5 last:border-0 flex items-center gap-3';
+                        item.innerHTML = `<div class="w-2 h-2 rounded-full" style="background:${'#'+b.color.toString(16)}"></div><span>${b.name}</span>`;
+                        item.onclick = () => {
+                            selectBuilding(b);
+                            results.classList.add('hidden');
+                            search.value = b.name;
+                        };
+                        results.appendChild(item);
+                    });
+                    results.classList.remove('hidden');
+                } else {
+                    results.classList.add('hidden');
+                }
+            });
+        }
+
+        function selectBuilding(data) {
+            activeTarget = data;
+            document.getElementById('building-name').innerText = data.name;
+            document.getElementById('building-subtitle').innerText = data.subtitle;
+            document.getElementById('building-desc').innerText = data.desc;
+            document.getElementById('info-panel').classList.add('active');
+
+            // Fly camera to building
+            isNavigating = true;
+            const targetPos = new THREE.Vector3(data.pos.x + 40, 35, data.pos.z + 40);
+            const lookAtPos = new THREE.Vector3(data.pos.x, 5, data.pos.z);
+            animateCamera(targetPos, lookAtPos);
+
+            // Clean previous path
+            if (pathLine) { scene.remove(pathLine); pathLine = null; }
+        }
+
+        function animateCamera(newPos, lookAtPos) {
+            const startPos = camera.position.clone();
+            const duration = 1200;
+            const startTime = performance.now();
+
+            function update(now) {
+                const elapsed = now - startTime;
+                const t = Math.min(elapsed / duration, 1);
+                // Ease-out cubic
+                const ease = 1 - Math.pow(1 - t, 3);
+
+                camera.position.lerpVectors(startPos, newPos, ease);
+                controls.target.lerp(lookAtPos, ease);
+                controls.update();
+
+                if (t < 1) {
+                    requestAnimationFrame(update);
+                } else {
+                    isNavigating = false;
+                }
+            }
+            requestAnimationFrame(update);
+        }
+
+        function showRouteToTarget() {
+            if (!activeTarget) return;
+            if (pathLine) scene.remove(pathLine);
+
+            const points = [];
+            // Simplified routing from "Main Entrance" (0,0,0) to target
+            points.push(new THREE.Vector3(0, 0.5, 100)); // Entrance
+            points.push(new THREE.Vector3(0, 0.5, activeTarget.pos.z));
+            points.push(new THREE.Vector3(activeTarget.pos.x, 0.5, activeTarget.pos.z));
+
+            const curve = new THREE.CatmullRomCurve3(points);
+            const curvePoints = curve.getPoints(50);
+            const geometry = new THREE.BufferGeometry().setFromPoints(curvePoints);
+            const material = new THREE.LineBasicMaterial({ color: 0x3b82f6, linewidth: 4 });
+            
+            pathLine = new THREE.Line(geometry, material);
+            scene.add(pathLine);
+
+            // Add animation to line? Simple pulse
+            let dash = 0;
+            pathLine.material.transparent = true;
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+
+            // Hover effects
+            if (!isNavigating) {
+                raycaster.setFromCamera(mouse, camera);
+                const intersects = raycaster.intersectObjects(buildings);
+                buildings.forEach(b => b.material.emissiveIntensity = 0.05);
+                if (intersects.length > 0) {
+                    intersects[0].object.material.emissiveIntensity = 0.4;
+                    document.body.style.cursor = 'pointer';
+                } else {
+                    document.body.style.cursor = 'default';
+                }
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>
